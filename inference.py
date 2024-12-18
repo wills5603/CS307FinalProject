@@ -20,8 +20,8 @@ test_features, test_labels = input_args()
 test_features_tensor = torch.load(test_features) 
 test_labels_tensor = torch.load(test_labels)
 
-print("Shape of test_features_tensor:", test_features_tensor.shape)
-print("Shape of test_labels_tensor:", test_labels_tensor.shape)
+# print("Shape of test_features_tensor:", test_features_tensor.shape)
+# print("Shape of test_labels_tensor:", test_labels_tensor.shape)
 
 test_dataset = TensorDataset(test_features_tensor, test_labels_tensor)
 test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
