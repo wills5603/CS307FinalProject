@@ -10,6 +10,8 @@ import numpy as np
 import wandb
 from sklearn.utils import resample
 from model_src.net import Net
+from sklearn.ensemble import RandomForestClassifier
+
 
 wandb.login()
 wandb.init(
@@ -44,6 +46,8 @@ val_size = int(0.2 * train_size)
 train_data = data[:train_size - val_size]
 val_data = train_data[train_size - val_size:train_size]
 test_data = data[train_size:]
+marathon_names = test_data['Marathon Name']
+marathon_names.to_csv('test_marathon_names.csv', index=False, header=True)
 
 majority_class = train_data[train_data['IntervalClass'] == 4]
 minority_classes = train_data[train_data['IntervalClass'] != 4]
@@ -109,6 +113,35 @@ val_loader = DataLoader(val_dataset, batch_size=8)
 input_dim = all_features.shape[1]
 num_classes = 24
 net = Net(input_dim=input_dim, num_classes=num_classes)
+
+def feature_importance():
+  rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+  rf_model.fit(train_features.numpy(), train_labels.numpy())
+
+  # Extract feature importance
+  feature_importance = rf_model.feature_importances_
+
+  # Create a DataFrame for feature importance
+  feature_names = all_features.columns
+  importance_df = pd.DataFrame({
+      'Feature': feature_names,
+      'Importance': feature_importance
+  }).sort_values(by='Importance', ascending=False)
+
+  # Plot feature importance
+  plt.figure(figsize=(10, 6))
+  plt.barh(importance_df['Feature'][:10], importance_df['Importance'][:10], color='skyblue')
+  plt.gca().invert_yaxis()
+  plt.xlabel('Feature Importance Score')
+  plt.ylabel('Features')
+  plt.title('Top 10 Feature Importances (Random Forest)')
+  plt.grid(axis='x', linestyle='--', alpha=0.7)
+  # plt.show()
+
+  top_features = importance_df['Feature'][:10].tolist()
+  print(len(top_features))
+
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 net.to(device)
