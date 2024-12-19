@@ -109,7 +109,7 @@ val_labels = train_labels[-12:]  # Take the last 12 labels
 train_labels = train_labels[:-12]
 test_labels = torch.from_numpy(test_data.IntervalClass.values).view(-1, 1) 
 
-all_features = all_features[feature_importance(train_features, train_labels, 150)]
+all_features = all_features[feature_importance(train_features, train_labels, 300)]
 train_features = torch.from_numpy(all_features[:len(train_data) - val_size].values)
 val_features = torch.from_numpy(all_features[len(train_data) - val_size:len(train_data)].values)
 test_features = torch.from_numpy(all_features[len(train_data):].values)
