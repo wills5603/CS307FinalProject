@@ -26,7 +26,7 @@ print("Shape of test_labels_tensor:", test_labels_tensor.shape)
 test_dataset = TensorDataset(test_features_tensor, test_labels_tensor)
 test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False)
 
-input_dim = 150
+input_dim = 300
 num_classes = 24
 net = Net(input_dim=input_dim, num_classes=num_classes)
 
