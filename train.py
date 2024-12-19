@@ -66,11 +66,11 @@ for interval_class in train_data['IntervalClass'].unique():
 
 # Shuffle the balanced dataset
 train_data = balanced_train_data.sample(frac=1, random_state=42).reset_index(drop=True)
-class_counts = train_data['IntervalClass'].value_counts()
-print("Class Distribution in Training Dataset After Oversampling:")
-print(class_counts)
-print("Class Distribution in Test Dataset:")
-print(test_data['IntervalClass'].value_counts())
+# class_counts = train_data['IntervalClass'].value_counts()
+# print("Class Distribution in Training Dataset After Oversampling:")
+# print(class_counts)
+# print("Class Distribution in Test Dataset:")
+# print(test_data['IntervalClass'].value_counts())
 
 data = pd.concat([train_data, val_data, test_data], ignore_index=True)
 
@@ -82,6 +82,24 @@ all_features[numeric_features] = all_features[numeric_features].apply(
 all_features[numeric_features] = all_features[numeric_features].fillna(0)
 all_features = pd.get_dummies(all_features, dummy_na=True)
 
+def feature_importance(train_features, train_labels, num_features = 100):
+  rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+  rf_model.fit(train_features.numpy(), train_labels.numpy())
+
+  # Extract feature importance
+  feature_importance = rf_model.feature_importances_
+
+  # Create a DataFrame for feature importance
+  feature_names = all_features.columns
+  importance_df = pd.DataFrame({
+      'Feature': feature_names,
+      'Importance': feature_importance
+  }).sort_values(by='Importance', ascending=False)
+
+  top_features = importance_df['Feature'][:num_features].tolist()
+  return top_features
+  # print(len(top_features))
+  
 train_features = torch.from_numpy(all_features[:len(train_data) - val_size].values)
 val_features = torch.from_numpy(all_features[len(train_data) - val_size:len(train_data)].values)
 test_features = torch.from_numpy(all_features[len(train_data):].values)
@@ -90,6 +108,12 @@ train_labels = torch.from_numpy(train_data.IntervalClass.values).view(-1, 1)
 val_labels = train_labels[-12:]  # Take the last 12 labels
 train_labels = train_labels[:-12]
 test_labels = torch.from_numpy(test_data.IntervalClass.values).view(-1, 1) 
+
+all_features = all_features[feature_importance(train_features, train_labels, 150)]
+train_features = torch.from_numpy(all_features[:len(train_data) - val_size].values)
+val_features = torch.from_numpy(all_features[len(train_data) - val_size:len(train_data)].values)
+test_features = torch.from_numpy(all_features[len(train_data):].values)
+
 
 print(f"Train Features: {train_features.shape}, Train Labels: {train_labels.shape}")
 print(f"Validation Features: {val_features.shape}, Validation Labels: {val_labels.shape}")
@@ -113,34 +137,6 @@ val_loader = DataLoader(val_dataset, batch_size=8)
 input_dim = all_features.shape[1]
 num_classes = 24
 net = Net(input_dim=input_dim, num_classes=num_classes)
-
-def feature_importance():
-  rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
-  rf_model.fit(train_features.numpy(), train_labels.numpy())
-
-  # Extract feature importance
-  feature_importance = rf_model.feature_importances_
-
-  # Create a DataFrame for feature importance
-  feature_names = all_features.columns
-  importance_df = pd.DataFrame({
-      'Feature': feature_names,
-      'Importance': feature_importance
-  }).sort_values(by='Importance', ascending=False)
-
-  # Plot feature importance
-  plt.figure(figsize=(10, 6))
-  plt.barh(importance_df['Feature'][:10], importance_df['Importance'][:10], color='skyblue')
-  plt.gca().invert_yaxis()
-  plt.xlabel('Feature Importance Score')
-  plt.ylabel('Features')
-  plt.title('Top 10 Feature Importances (Random Forest)')
-  plt.grid(axis='x', linestyle='--', alpha=0.7)
-  # plt.show()
-
-  top_features = importance_df['Feature'][:10].tolist()
-  print(len(top_features))
-
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
