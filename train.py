@@ -31,76 +31,77 @@ def assign_time_interval(time_in_seconds):
         if start <= time_in_seconds < end:
             return i  # Return the class index (the bin number)
     return len(time_intervals) - 1  # In case the time is out of the predefined range (shouldn't happen here)
-  
+
 data['IntervalClass'] = data['MarathonTime'].apply(assign_time_interval)
 
 first_entry = data.iloc[[0]]  # Extract the first row
 data = data.iloc[1:].reset_index(drop=True) 
-majority_class = data[data['IntervalClass'] == 4]
-minority_classes = data[data['IntervalClass'] != 4]
+data = data.sample(frac=1, random_state=4).reset_index(drop=True)
+data = pd.concat([data, first_entry], ignore_index=True)
 
-# Oversample the minority classes
-minority_oversampled = resample(minority_classes, 
+train_size = int(0.8 * len(data))
+val_size = int(0.2 * train_size)
+train_data = data[:train_size - val_size]
+val_data = train_data[train_size - val_size:train_size]
+test_data = data[train_size:]
+
+majority_class = train_data[train_data['IntervalClass'] == 4]
+minority_classes = train_data[train_data['IntervalClass'] != 4]
+
+balanced_train_data = pd.DataFrame()  # Initialize an empty DataFrame
+
+# Loop through each class in the training data
+for interval_class in train_data['IntervalClass'].unique():
+    class_subset = train_data[train_data['IntervalClass'] == interval_class]
+    if len(class_subset) < len(majority_class):  # Oversample if the class is a minority
+        class_subset = resample(class_subset, 
                                 replace=True, 
                                 n_samples=len(majority_class), 
                                 random_state=42)
+    balanced_train_data = pd.concat([balanced_train_data, class_subset])
 
-# Combine back into a balanced dataset
-balanced_data = pd.concat([majority_class, minority_oversampled])
+# Shuffle the balanced dataset
+train_data = balanced_train_data.sample(frac=1, random_state=42).reset_index(drop=True)
+class_counts = train_data['IntervalClass'].value_counts()
+print("Class Distribution in Training Dataset After Oversampling:")
+print(class_counts)
+print("Class Distribution in Test Dataset:")
+print(test_data['IntervalClass'].value_counts())
 
-# Shuffle the balanced dataset to randomize the row order
-data = balanced_data.sample(frac=1, random_state=42).reset_index(drop=True)
-data = pd.concat([data, first_entry], ignore_index=True)
-
-class_counts = data['IntervalClass'].value_counts().sort_index()
-
-# Plot the histogram
-plt.figure(figsize=(10, 6))
-plt.bar(class_counts.index, class_counts.values, width=0.8, edgecolor="black")
-plt.xlabel("Interval Class")
-plt.ylabel("Number of Samples")
-plt.title("Histogram of Interval Classes After Resampling")
-plt.xticks(class_counts.index)  # Show all class indices on x-axis
-plt.grid(axis='y', linestyle='--', alpha=0.7)
-# plt.show()
-
-train_size = int(0.8 * len(data))
-train_data = data[:train_size]
-test_data = data[train_size:]  # Add first entry to test set
-marathon_names = test_data['Marathon Name']
-marathon_names.to_csv('test_marathon_names.csv', index=False, header=True)
+data = pd.concat([train_data, val_data, test_data], ignore_index=True)
 
 # Prepare the labels based on marathon time (in seconds)
 all_features = data.drop(columns=['MarathonTime', 'IntervalClass'])
-
 numeric_features = all_features.dtypes[all_features.dtypes != 'object'].index
 all_features[numeric_features] = all_features[numeric_features].apply(
     lambda x: (x - x.mean()) / (x.std()))
 all_features[numeric_features] = all_features[numeric_features].fillna(0)
 all_features = pd.get_dummies(all_features, dummy_na=True)
 
-train_features = torch.from_numpy(all_features[:train_size].values)
-test_features = torch.from_numpy(all_features[train_size:].values)
+train_features = torch.from_numpy(all_features[:len(train_data) - val_size].values)
+val_features = torch.from_numpy(all_features[len(train_data) - val_size:len(train_data)].values)
+test_features = torch.from_numpy(all_features[len(train_data):].values)
+
 train_labels = torch.from_numpy(train_data.IntervalClass.values).view(-1, 1) 
+val_labels = train_labels[-12:]  # Take the last 12 labels
+train_labels = train_labels[:-12]
 test_labels = torch.from_numpy(test_data.IntervalClass.values).view(-1, 1) 
 
+print(f"Train Features: {train_features.shape}, Train Labels: {train_labels.shape}")
+print(f"Validation Features: {val_features.shape}, Validation Labels: {val_labels.shape}")
+print(f"Test Features: {test_features.shape}, Test Labels: {test_labels.shape}")
 
 train_features = train_features.float()
 test_features = test_features.float()
+val_features = val_features.float()
 train_labels = train_labels.long().squeeze()
+val_labels = val_labels.long().squeeze()
 test_labels = test_labels.long().squeeze()
 torch.save(test_features, 'test_features.pt')
 torch.save(test_labels, 'test_labels.pt')
 
-
-train_size = int(0.8 * len(train_features))
-val_size = len(train_features) - train_size
-train_dataset, val_dataset = random_split(TensorDataset(train_features, train_labels), [train_size, val_size])
-
-train_indices = train_dataset.indices
-val_indices = val_dataset.indices
-train_data_with_names = train_data.iloc[train_indices]["Marathon Name"].tolist()
-val_data_with_names = train_data.iloc[val_indices]["Marathon Name"].tolist()
+train_dataset = TensorDataset(train_features, train_labels)
+val_dataset = TensorDataset(val_features, val_labels)
 
 train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=8)
@@ -177,47 +178,4 @@ net.load_state_dict(best_model)
 net.eval()
 # plot_loss(train_loss, val_loss)
 
-train_true_labels = []
-train_predictions = []
-val_true_labels = []
-val_predictions = []
-
-# Step 1: Define a function to evaluate the model and collect predictions
-def get_predictions(data_loader, net, device):
-  true_labels = []
-  predictions = []
-  net.eval()  # Set the model to evaluation mode
-  with torch.no_grad():
-    for features, labels in data_loader:
-      features, labels = features.to(device), labels.to(device)
-      outputs = net(features)
-      _, predicted = torch.max(outputs, 1)
-      true_labels.extend(labels.cpu().numpy())
-      predictions.extend(predicted.cpu().numpy())
-  return true_labels, predictions
-
-# Step 2: Get predictions for the training set
-train_true_labels, train_predictions = get_predictions(train_loader, net, device)
-
-# Step 3: Get predictions for the validation set
-val_true_labels, val_predictions = get_predictions(val_loader, net, device)
-
-# Step 4: Combine the predictions with true labels into a DataFrame
-train_results_df = pd.DataFrame({
-    "Marathon Name": train_data_with_names,
-    "True Labels (Train)": train_true_labels,
-    "Predictions (Train)": train_predictions
-})
-
-val_results_df = pd.DataFrame({
-    "Marathon Name": val_data_with_names,
-    "True Labels (Val)": val_true_labels,
-    "Predictions (Val)": val_predictions
-})
-
-# Step 5: Save the predictions to a CSV file
-train_results_df.to_csv('train_predictions.csv', index=False)
-val_results_df.to_csv('val_predictions.csv', index=False)
-
-print("Train and validation predictions saved to 'train_predictions.csv' and 'val_predictions.csv'")
 wandb.finish()
